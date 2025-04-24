@@ -12,15 +12,13 @@ def index_block(w3: Web3, block_number: int, contract_addresses: List[str], even
     logs = get_logs(w3, block_number, contract_addresses)
     if not logs:
         logger.info(f"No logs found for block {block_number}")
-        return
+        return [] # Return empty list if no logs
 
     # Decode logs
-    decoded_logs = decode_logs(w3, logs, events)
+    # This will raise an error if decoding fails for a log with a known ABI
+    processed_logs = decode_logs(w3, logs, events)
 
-    # Transform logs to desired format
-    transformed_logs = transform_logs(decoded_logs)
-
-    return transformed_logs
+    return processed_logs
 
 def get_logs(w3: Web3, block_number: int, contract_addresses: List[str]) -> List[dict]:
     """
@@ -45,95 +43,80 @@ def get_logs(w3: Web3, block_number: int, contract_addresses: List[str]) -> List
 
 # TODO: Match on contract address, not just topic hash
 def decode_logs(w3: Web3, logs: List[dict], events: Dict) -> List[dict]:
-    decoded_logs = []
+    processed_logs = []
     
     for log in logs:
-        if not log.get('topics') or len(log['topics']) == 0:
-            continue
-            
-        topic_hash = log['topics'][0].hex() if isinstance(log['topics'][0], bytes) else log['topics'][0]
-        
-        # Check if we know this event
-        if topic_hash in events["by_topic"]:
-            event_info = events["by_topic"][topic_hash]
-            
-            # Handle case where event_info is a list (multiple events with same signature)
-            if isinstance(event_info, list):
-                event_info = event_info[0]  # Use first matching event for now
-            
-            try:
-                # Decode the individual log
-                decoded_log = decode_single_log(w3, log, event_info)
-                if decoded_log:
-                    decoded_logs.append(decoded_log)
-            except Exception as e:
-                logger.error(f"Error decoding log: {e}")
-    
-    return decoded_logs
-
-def decode_single_log(w3: Web3, log: dict, event_info: dict) -> dict | None:
-    """
-    Decode a single log entry using its event info
-    """
-    try:
-        # Create a contract with just this event
-        contract = w3.eth.contract(abi=[{
-            "type": "event",
-            "name": event_info["name"],
-            "inputs": event_info["inputs"],
-            "anonymous": False
-        }])
-        
-        # Process the log
-        event_obj = getattr(contract.events, event_info["name"])
-        decoded_event = event_obj().process_log(log)
-        
-        result = {
+        # Extract common fields first
+        base_log_data = {
             "block_hash": log['blockHash'].hex() if isinstance(log['blockHash'], bytes) else log['blockHash'],
             "block_number": log['blockNumber'],
-            "block_timestamp": log['blockTimestamp'], 
+            "block_timestamp": int(log['blockTimestamp'], 16) if isinstance(log.get('blockTimestamp'), str) and log['blockTimestamp'].startswith('0x') else log.get('blockTimestamp'),
             "transaction_hash": log['transactionHash'].hex() if isinstance(log['transactionHash'], bytes) else log['transactionHash'],
             "transaction_index": log['transactionIndex'],
             "log_index": log['logIndex'],
             "contract_address": log['address'],
             "data": log['data'].hex() if isinstance(log['data'], bytes) else log['data'],
-            "topics": [topic.hex() if isinstance(topic, bytes) else topic for topic in log['topics']],
-            "removed": log['removed'],
-            "event": event_info["name"],
-            "contract": event_info["contract"],
-            "args": dict(decoded_event["args"])
+            "topics": [topic.hex() if isinstance(topic, bytes) else topic for topic in log.get('topics', [])],
+            "removed": log.get('removed', False)
         }
-        
-        return result
-    except Exception as e:
-        logger.error(f"Error in decode_single_log: {e}")
-        return None
 
-def transform_logs(logs: List[dict]) -> List[dict]:
+        final_log = None
+        event_name = None
+        contract_name = None
+        decoded_data = None
+
+        # Check if topics exist and are non-empty
+        if log.get('topics') and len(log['topics']) > 0:
+            topic_hash = log['topics'][0].hex() if isinstance(log['topics'][0], bytes) else log['topics'][0]
+            
+            # Check if we know this event ABI
+            if topic_hash in events.get("by_topic", {}):
+                event_info = events["by_topic"][topic_hash]
+                
+                # Handle case where event_info is a list (multiple events with same signature)
+                if isinstance(event_info, list):
+                    # TODO: Decide how to handle ambiguous events - using first for now
+                    logger.warning(f"Multiple event ABIs found for topic {topic_hash}. Using the first one.")
+                    event_info = event_info[0]
+                
+                try:
+                    # Decode the individual log - this will raise error if decoding fails
+                    event_name, contract_name, decoded_data = decode_single_log(w3, log, event_info)
+                    final_log = {**base_log_data, "event": event_name, "contract": contract_name, "decoded_data": decoded_data}
+                except Exception as e:
+                    logger.error(f"Failed to decode log for event {event_info.get('name', 'unknown')} (Topic: {topic_hash}) in block {base_log_data['block_number']} Tx: {base_log_data['transaction_hash']}: {e}")
+                    # Re-raise the exception to halt processing for this block
+                    raise e 
+            else:
+                # ABI not found for this topic
+                logger.debug(f"ABI not found for topic {topic_hash} in block {base_log_data['block_number']}. Storing raw log.")
+                final_log = {**base_log_data, "event": None, "contract": None, "decoded_data": None}
+        else:
+            # Log has no topics or empty topics list
+            logger.debug(f"Log in block {base_log_data['block_number']} has no topics. Storing raw log.")
+            final_log = {**base_log_data, "event": None, "contract": None, "decoded_data": None}
+
+        if final_log:
+             processed_logs.append(final_log)
+        # If final_log is still None (e.g., due to an unexpected path, though unlikely now), it's skipped.
+    
+    return processed_logs
+
+def decode_single_log(w3: Web3, log: dict, event_info: dict) -> tuple[str, str, dict] | None:
     """
-    Transform logs to desired format
+    Decode a single log entry using its event info.
+    Returns tuple(event_name, contract_name, decoded_args) or raises error.
     """
-    result = []
-    for log in logs:
-        result.append({
-            "block_hash": log['block_hash'],
-            "block_number": log['block_number'],
-            "block_timestamp": log['block_timestamp'], 
-            "transaction_hash": log['transaction_hash'],
-            "transaction_index": log['transaction_index'],
-            "log_index": log['log_index'],
-            "contract_address": log['contract_address'],
-            "data": log['data'],
-            "topics": log['topics'],
-            "removed": log['removed'],
-            "contract_name": log['contract'],
-            "event": log['event'],
-            "sender": log['args']['sender'],
-            "recipient": log['args']['recipient'],
-            "amount0": log['args']['amount0'],
-            "amount1": log['args']['amount1'],
-            "sqrt_price_x96": log['args']['sqrtPriceX96'],
-            "liquidity": log['args']['liquidity'],
-            "tick": log['args']['tick'],
-        })
-    return result
+    # Create a contract with just this event
+    contract = w3.eth.contract(abi=[{
+        "type": "event",
+        "name": event_info["name"],
+        "inputs": event_info["inputs"],
+        "anonymous": False
+    }])
+
+    # Process the log - let errors propagate
+    event_obj = getattr(contract.events, event_info["name"])
+    decoded_event = event_obj().process_log(log)
+
+    return event_info["name"], event_info["contract"], dict(decoded_event["args"])
