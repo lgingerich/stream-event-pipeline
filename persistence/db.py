@@ -1,12 +1,25 @@
 from datetime import datetime, timezone
-from loguru import logger
 import json
-
+from loguru import logger
+import psycopg2
 
 class DB:
-    def __init__(self, conn):
-        self.conn = conn
-        self.create_tables()
+    def __init__(self, db_name, db_user, db_password, db_host, db_port):
+        self.conn = None # Initialize conn to None
+        try:
+            logger.info(f"Attempting to connect to database {db_name} at {db_host}:{db_port}")
+            self.conn = psycopg2.connect(
+                dbname=db_name,
+                user=db_user,
+                password=db_password,
+                host=db_host,
+                port=db_port
+            )
+            logger.info("Database connection successful")
+            self.create_tables() # Also create tables on db initialization
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            raise e
 
     def create_tables(self):
         """

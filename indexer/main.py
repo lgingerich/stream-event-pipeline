@@ -1,17 +1,21 @@
 from dotenv import load_dotenv
 from loguru import logger
 import os
+import sys
 from web3 import Web3
-import psycopg2
 
 from indexer import index_block
 from parser import parse_abi
 from producer import Producer
-from consumer import Consumer
-from db import DB
 
 # TODO: I should only need to call this if not running in Docker
 load_dotenv()
+
+# Configure Loguru to show INFO and higher (INFO, WARNING, ERROR, CRITICAL)
+logger.remove()
+logger.add(sys.stderr, level="INFO")
+
+producer = None
 
 def main():
     # Get RPC URL from environment variable
@@ -27,7 +31,9 @@ def main():
 
     # Get start and end block from environment variables (optional params)
     start_block = os.getenv("START_BLOCK")
-    if start_block:
+    if start_block == 'latest':
+        start_block = w3.eth.block_number
+    elif start_block is not None and start_block != 'latest':
         logger.info(f"START_BLOCK: {start_block}")
         start_block = int(start_block)
     else:
@@ -49,44 +55,11 @@ def main():
     logger.info(f"Attempting to connect to Kafka brokers at: {kafka_bootstrap_servers}")
     logger.info(f"Target Kafka topic: {kafka_topic}")
 
-    # Get DB config from environment variables
-    db_name = os.getenv("POSTGRES_DB")
-    db_user = os.getenv("POSTGRES_USER")
-    db_password = os.getenv("POSTGRES_PASSWORD")
-    db_host = os.getenv("POSTGRES_HOST")
-    db_port = os.getenv("POSTGRES_PORT")
-    if not all([db_name, db_user, db_password, db_host, db_port]):
-        raise ValueError("Database connection details (POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT) must be set")
-    logger.info(f"Attempting to connect to database {db_name} at {db_host}:{db_port}")
-
-    # Initialize DB connection and DB class instance
-    try:
-        db_conn = psycopg2.connect(
-            dbname=db_name,
-            user=db_user,
-            password=db_password,
-            host=db_host,
-            port=db_port
-        )
-        db = DB(db_conn)
-        logger.info("Database connection successful")
-    except Exception as e:
-        logger.error(f"Failed to connect to database: {e}")
-        raise e
-
     # Initialize Kafka producer
     producer = Producer(
         bootstrap_servers=kafka_bootstrap_servers,
         retries=5,
         retry_backoff_ms=1000
-    )
-
-    # Initialize Kafka consumer
-    consumer = Consumer(
-        kafka_topic,
-        bootstrap_servers=kafka_bootstrap_servers
-        # group_id="blockchain-indexer",
-        # auto_offset_reset="earliest"
     )
 
     # Get event signatures and topics
@@ -116,38 +89,17 @@ def main():
             # Send cleaned logs to Kafka
             producer.produce_message(kafka_topic, logs)
 
-            # Consume messages
-            consumed_message = consumer.consume_message()
-            if consumed_message:
-                logger.info(f"Successfully consumed message: {consumed_message}")
-                # Insert consumed message into the database
-                try:
-                    # TODO: The structure of consumed_message needs to match the DB insert_data expectations
-                    # Assuming consumed_message is a dict matching the expected structure for now.
-                    db.insert_data(consumed_message) 
-                except Exception as e:
-                    logger.error(f"Failed to insert consumed message into DB: {e}")
-                    # Decide if you want to stop the loop on DB insert failure
-                    # running = False 
-                    # break
-            else:
-                logger.info("No message consumed in this poll interval.")
-
             # Increment block to process
             block_to_process += 1
-                
+            logger.info(f"Finished indexing block {block_to_process}")
         except Exception as e:
             logger.error(f"Error during indexing: {e}")
             running = False
             break
 
-    # Close Kafka producer and consumer
-    producer.close()
-    consumer.close()
-    # Close DB connection
-    if db:
-        db.close()
-        logger.info("Database connection closed.")
+    # Cleanup
+    if producer:
+        producer.close()
 
 if __name__ == "__main__":
     main()
