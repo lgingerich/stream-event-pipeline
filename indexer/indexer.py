@@ -3,7 +3,7 @@ from loguru import logger
 from typing import List, Dict, Any
 from web3 import Web3
 
-# from producer import produce_message
+from producer import produce_message
 
 def index_block(w3: Web3, block_number: int, contract_addresses: List[str], events: Dict):
     """
@@ -24,7 +24,7 @@ def index_block(w3: Web3, block_number: int, contract_addresses: List[str], even
     print(transformed_logs)
 
     # Send cleaned logs to Kafka
-    # produce_message(transformed_logs)
+    produce_message(transformed_logs)
 
 def get_logs(w3: Web3, block_number: int, contract_addresses: List[str]) -> List[dict]:
     """
@@ -100,7 +100,7 @@ def decode_single_log(w3: Web3, log: dict, event_info: dict) -> dict | None:
             "transaction_index": log['transactionIndex'],
             "log_index": log['logIndex'],
             "contract_address": log['address'],
-            "data": log['data'],
+            "data": log['data'].hex() if isinstance(log['data'], bytes) else log['data'],
             "topics": [topic.hex() if isinstance(topic, bytes) else topic for topic in log['topics']],
             "removed": log['removed'],
             "event": event_info["name"],
