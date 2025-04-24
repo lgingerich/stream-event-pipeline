@@ -3,8 +3,6 @@ from loguru import logger
 from typing import List, Dict, Any
 from web3 import Web3
 
-from producer import produce_message
-
 def index_block(w3: Web3, block_number: int, contract_addresses: List[str], events: Dict):
     """
     Top level function to handle the indexing process for a given block
@@ -21,10 +19,8 @@ def index_block(w3: Web3, block_number: int, contract_addresses: List[str], even
 
     # Transform logs to desired format
     transformed_logs = transform_logs(decoded_logs)
-    print(transformed_logs)
 
-    # Send cleaned logs to Kafka
-    produce_message(transformed_logs)
+    return transformed_logs
 
 def get_logs(w3: Web3, block_number: int, contract_addresses: List[str]) -> List[dict]:
     """
