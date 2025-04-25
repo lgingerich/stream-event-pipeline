@@ -50,6 +50,8 @@ class DB:
                     PRIMARY KEY (transaction_hash, log_index)
                 )
             """)
+            # Create basic indexes that we may want. Would also be good to add one to 
+            # decoded_data as querying on event name is likely common.
             cur.execute("CREATE INDEX IF NOT EXISTS idx_block_number ON events (block_number)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_contract_address ON events (contract_address)")
             self.conn.commit()

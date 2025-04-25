@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from loguru import logger
 import os
 import sys
+
 from consumer import Consumer
 from db import DB
 

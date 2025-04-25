@@ -4,17 +4,12 @@ from typing import Dict, Any
 from web3 import Web3
 import os
 
-def parse_abi(abi_directory: str) -> Dict[str, Dict[str, Dict[str, Any]]]:
+def parse_abi(abi_directory: str) -> Dict[str, Dict[str, Any]]:
     """
     Process all JSON files in a directory and extract event signatures and topics.
-    Returns a single dictionary with two sub-dictionaries:
-    - 'by_name': mapping "contract.eventName" to event details
-    - 'by_topic': mapping event topic hashes to event details
-    
-    This structure allows lookups by either contract name + event name or by topic hash.
+    Returns a dictionary mapping event topic hashes to event details.
     """
     result = {
-        "by_name": {},
         "by_topic": {}
     }
     
@@ -71,9 +66,6 @@ def parse_abi(abi_directory: str) -> Dict[str, Dict[str, Dict[str, Any]]]:
                     "topic": topic,
                     "inputs": item["inputs"]
                 }
-                
-                # Store in both lookup dictionaries
-                result["by_name"][event_key] = event_info
                 
                 # For topic lookup, note that multiple contracts might have the same event signature
                 # If there's a collision, we'll store a list of all matching events

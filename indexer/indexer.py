@@ -1,6 +1,5 @@
-import json
 from loguru import logger
-from typing import List, Dict, Any
+from typing import List, Dict
 from web3 import Web3
 
 def index_block(w3: Web3, block_number: int, contract_addresses: List[str], events: Dict):
@@ -41,22 +40,22 @@ def get_logs(w3: Web3, block_number: int, contract_addresses: List[str]) -> List
         logger.error(f"Error retrieving logs for block {block_number}: {e}")
         return []
 
-# TODO: Match on contract address, not just topic hash
+# TODO: To better handle topic hash collisions, match on contract address, not just topic hash
 def decode_logs(w3: Web3, logs: List[dict], events: Dict) -> List[dict]:
     processed_logs = []
     
     for log in logs:
         # Extract common fields first
         base_log_data = {
-            "block_hash": log['blockHash'].hex() if isinstance(log['blockHash'], bytes) else log['blockHash'],
+            "block_hash": "0x" + log['blockHash'].hex() if isinstance(log['blockHash'], bytes) else log['blockHash'],
             "block_number": log['blockNumber'],
             "block_timestamp": int(log['blockTimestamp'], 16) if isinstance(log.get('blockTimestamp'), str) and log['blockTimestamp'].startswith('0x') else log.get('blockTimestamp'),
-            "transaction_hash": log['transactionHash'].hex() if isinstance(log['transactionHash'], bytes) else log['transactionHash'],
+            "transaction_hash": "0x" + log['transactionHash'].hex() if isinstance(log['transactionHash'], bytes) else log['transactionHash'],
             "transaction_index": log['transactionIndex'],
             "log_index": log['logIndex'],
             "contract_address": log['address'],
-            "data": log['data'].hex() if isinstance(log['data'], bytes) else log['data'],
-            "topics": [topic.hex() if isinstance(topic, bytes) else topic for topic in log.get('topics', [])],
+            "data": "0x" + log['data'].hex() if isinstance(log['data'], bytes) else log['data'],
+            "topics": ["0x" + topic.hex() if isinstance(topic, bytes) else topic for topic in log.get('topics', [])],
             "removed": log.get('removed', False)
         }
 
@@ -85,7 +84,6 @@ def decode_logs(w3: Web3, logs: List[dict], events: Dict) -> List[dict]:
                     final_log = {**base_log_data, "event": event_name, "contract": contract_name, "decoded_data": decoded_data}
                 except Exception as e:
                     logger.error(f"Failed to decode log for event {event_info.get('name', 'unknown')} (Topic: {topic_hash}) in block {base_log_data['block_number']} Tx: {base_log_data['transaction_hash']}: {e}")
-                    # Re-raise the exception to halt processing for this block
                     raise e 
             else:
                 # ABI not found for this topic
@@ -97,8 +95,7 @@ def decode_logs(w3: Web3, logs: List[dict], events: Dict) -> List[dict]:
             final_log = {**base_log_data, "event": None, "contract": None, "decoded_data": None}
 
         if final_log:
-             processed_logs.append(final_log)
-        # If final_log is still None (e.g., due to an unexpected path, though unlikely now), it's skipped.
+            processed_logs.append(final_log)
     
     return processed_logs
 
