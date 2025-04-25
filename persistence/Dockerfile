@@ -18,4 +18,4 @@ ADD . /app
 # Sync the project
 RUN uv sync --frozen
 
-CMD [ "uv", "run", "main.py"]
+CMD [ "uv", "run", "src/main.py"]
