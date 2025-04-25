@@ -1,18 +1,21 @@
-# Base image
+# Install uv
 FROM python:3.10-slim
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Set working directory
+# Change the working directory to the `app` directory
 WORKDIR /app
 
-# Copy pyproject.toml
-COPY pyproject.toml .
+# Copy the lockfile and `pyproject.toml` into the image
+ADD uv.lock /app/uv.lock
+ADD pyproject.toml /app/pyproject.toml
 
-# Install uv and use it to install dependencies
-RUN pip install uv && \
-    uv pip install --system -e .
+# Install dependencies
+RUN uv sync --frozen --no-install-project
 
-# Copy the rest of the application
-COPY . .
+# Copy the project into the image
+ADD . /app
 
-# Command to run when the container starts
-CMD ["python", "main.py"]
+# Sync the project
+RUN uv sync --frozen
+
+CMD [ "uv", "run", "main.py"]

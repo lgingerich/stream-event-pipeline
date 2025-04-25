@@ -8,16 +8,15 @@ from indexer import index_block
 from parser import parse_abi
 from producer import Producer
 
-# TODO: I should only need to call this if not running in Docker
 load_dotenv()
 
 # Configure Loguru to show INFO and higher (INFO, WARNING, ERROR, CRITICAL)
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
-producer = None
-
 def main():
+    producer = None
+
     # Get RPC URL from environment variable
     rpc_url = os.getenv("RPC_URL")
     if not rpc_url:

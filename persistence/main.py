@@ -5,17 +5,16 @@ import sys
 from consumer import Consumer
 from db import DB
 
-# TODO: I should only need to call this if not running in Docker
 load_dotenv()
 
 # Configure Loguru to show INFO and higher (INFO, WARNING, ERROR, CRITICAL)
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
-consumer = None
-db = None
-
 def main():
+    consumer = None
+    db = None
+    
     try:
         # Get Kafka config from environment variables
         kafka_bootstrap_servers = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
