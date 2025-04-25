@@ -1,11 +1,16 @@
 # Stream Event Pipeline
 
-This project processes stream events using a pipeline architecture consisting of two main components: `indexer` and `persistence`. Kafka serves as the message broker facilitating communication between these components.
+This project processes stream events from blockchain contract logs using a pipeline architecture consisting of two main components: `indexer` and `persistence`. Kafka serves as the message broker facilitating communication between these components.
 
 ## Components
 
--   **Indexer (`indexer/`)**: This component is responsible for consuming raw data streams, processing them, and preparing them for storage. More details can be found in the [indexer README](./indexer/README.md).
--   **Persistence (`persistence/`)**: This component receives processed data from the indexer via Kafka and handles saving it to Postgres. More details can be found in the [persistence README](./persistence/README.md).
+-   **Indexer (`indexer/`)**: This component is responsible for consuming raw blockchain data, decoding logs, and preparing them for storage. More details can be found in the [indexer README](./indexer/README.md).
+-   **Persistence (`persistence/`)**: This component receives processed data from the indexer via Kafka and saves it to Postgres. More details can be found in the [persistence README](./persistence/README.md).
+
+## Functionality
+
+-   **ABI Handling:** Loads all ABIs from the designated directory. Handles topic hash collisions (identical event signatures in different ABIs) by storing all matches.
+-   **Multi-Contract Monitoring:** Fetching logs efficiently for multiple distinct contract addresses is untested and likely requires further development.
 
 ## Getting Started
 
@@ -24,6 +29,8 @@ To set up your local environment:
     cp .env.example .env
     ```
 2.  Edit the `.env` file and provide the necessary values for your setup.
+
+    **Note:** Docker Compose prioritizes variables defined in the `.env` file. However, if you encounter setup errors related to configuration, ensure that you don't have conflicting environment variables set directly in your shell session. If you suspect a conflict, try `unset VARIABLE_NAME` in your terminal for the potentially conflicting variable before running `docker-compose up`.
 
 ### Running the Pipeline (Docker Compose)
 
