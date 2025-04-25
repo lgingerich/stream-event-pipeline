@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from loguru import logger
 import os
 import sys
+import time
 from web3 import Web3
 
 from indexer import index_block
@@ -47,15 +48,12 @@ def main():
         # Get start and end block from environment variables
         # START_BLOCK can be:
         # - An integer block number (e.g., 12345670)
-        # - The string 'latest' to start from the current block
         # - If not set, defaults to 0
         # END_BLOCK can be:
         # - An integer block number (e.g., 12345678)
         # - If not set, indexing continues indefinitely
         start_block = os.getenv("START_BLOCK")
-        if start_block == 'latest':
-            start_block = w3.eth.block_number
-        elif start_block is not None and start_block != 'latest':
+        if start_block:
             logger.info(f"START_BLOCK: {start_block}")
             start_block = int(start_block)
         else:
@@ -93,20 +91,32 @@ def main():
                     logger.info("Reached end block, stopping indexing")
                     running = False
                     break
+
+                # Check if we are within 100 blocks of chain tip. This acts as a buffer
+                # to avoid needing reorg detection.
+                # If we hit this buffer, sleep for 12 seconds to avoid catching up.
+                latest_block = w3.eth.block_number
+                if block_to_process > latest_block - 100:
+                    logger.info(f"Block {block_to_process} is within 100 blocks of chain tip {latest_block}. Sleeping for 12 seconds.")
+                    time.sleep(12)
+                    continue
                 
                 # Index block and return cleaned logs
+                logger.info(f"Indexing block {block_to_process}")
                 logs = index_block(w3, block_to_process, contract_addresses, events)
                 
                 # Send cleaned logs to Kafka
-                producer.produce_message(kafka_topic, logs)
+                if logs: # Only produce if there are logs
+                    producer.produce_message(kafka_topic, logs)
+                    logger.info(f"Sent {len(logs)} logs from block {block_to_process} to Kafka")
+                else:
+                    logger.info(f"No relevant logs found in block {block_to_process}")
 
                 # Increment block to process
                 block_to_process += 1
                 logger.info(f"Finished indexing block {block_to_process}")
             except Exception as e:
-                logger.error(f"Error during indexing: {e}")
-                running = False
-                break
+                logger.error(f"Error during indexing block {block_to_process}: {e}")
 
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, shutting down gracefully.")
